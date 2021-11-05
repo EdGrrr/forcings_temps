@@ -7,14 +7,10 @@ import statsmodels.api as sm
 
 
 #File paths
-os.chdir('/Users/hausfath/Desktop/Climate Science/Carbon Brief/100% Human/')
-forcing_file = '/Users/hausfath/Desktop/Climate Science/Carbon Brief/100% Human/Forcing_2500.xls'
-temp_file = '/Users/hausfath/Desktop/Climate Science/Model GCM Comparison/global_temps_standard.csv'
-enso_file = '/Users/hausfath/Desktop/Climate Science/Carbon Brief/Model Obs Comps/ENSO Kaplan.xlsx'
-land_file = '/Users/hausfath/Desktop/Climate Science/Carbon Brief/100% Human/berkeley_land.xlsx'
-
+forcing_file = 'Forcing_2500.csv'
+enso_file = 'ENSO_Kaplan.txt'
+temp_file = 'berkeley_HadSST_merged.txt'
 #Options/Parameters
-series = 'Berkeley'
 d1 = 4 #Fast decay time (years) of thermal response
 d2 = 209.5 #Slow decay time two (years) of thermal response
 c1 = 0.404 #Contribution to total equilibrium warming of fast response
@@ -28,22 +24,23 @@ def import_forcings(forcing_file):
     '''
     Import forcing data into a pandas dataframe
     '''
-    rf = pd.read_excel(forcing_file, sheetname='Sheet1')
+    rf = pd.read_csv(forcing_file)
     rf['year'] = rf['date'].astype(int)
     rf['month'] = ((rf['date'] - rf['year']) * 12 + 1).round(0).astype(int)
     return rf
 
-def remove_enso(series, temp_file, enso_file):
+def remove_enso(temp_file, enso_file):
     '''
     Remove the influence of ENSO from observations using a 3-month lagged
     index per Foster and Rahmstorf. Return both temperatures with and without
     ENSO effects included.
     '''
-    temps = pd.read_csv(temp_file)
-    temps['temp'] = temps[series]
-    temps['year'] = temps['date'].astype(int)
-    temps['month'] = ((temps['date'] - temps['year']) * 12 + 1).round(0).astype(int)
-    enso = pd.read_excel(enso_file, sheetname='Sheet1')
+    temps = pd.read_csv(temp_file, sep='\s+', skiprows=86, index_col=False,
+                        usecols=[0,1,2,3], names=['year', 'month', 'anomaly', 'uncertainty'],
+                        nrows=2148-96+9)
+
+    temps['temp'] = temps['anomaly']
+    enso = pd.read_csv(enso_file, sep='\s+', skiprows=46, index_col=False, names=['date', 'enso'])
     enso['year'] = enso['date'].astype(int)
     enso['month'] = ((enso['date'] - enso['year']) * 12 + 1).round(0).astype(int)
     temps = pd.merge(
@@ -55,7 +52,7 @@ def remove_enso(series, temp_file, enso_file):
     )
     for n in range(1,10):
         temps['enso_'+str(n)] = temps['enso'].shift(n)
-    temps_subset = temps.dropna(subset=[[series, 'enso_3']])
+    temps_subset = temps.dropna(subset=['enso_3'])
     smresults = smf.ols('temp ~ enso_3', temps_subset).fit()
     temps['enso_3'].fillna(0, inplace=True)
     temps['pred'] = temps['enso_3'] * smresults.params.enso_3 + smresults.params.Intercept
@@ -64,18 +61,6 @@ def remove_enso(series, temp_file, enso_file):
     temps['temps_no_enso'] = calc_anomaly(temps, 'temps_no_enso')
     temps['temps_enso'] = calc_anomaly(temps, 'temps_enso')
     return temps[['year', 'month', 'temps_enso', 'temps_no_enso']]
-
-def berkeley_land(land_file):
-    '''
-    Import Berkeley Land data. No ENSO removal is done for land because of the
-    smaller impact of ENSO on land temperature variations.
-    '''
-    temps = pd.read_excel(land_file, sheetname='Sheet1')
-    temps['temps_enso'] = temps['anomaly']
-    temps['temps_no_enso'] = temps['anomaly']
-    temps['temps_no_enso'] = calc_anomaly(temps, 'temps_no_enso')
-    temps['temps_enso'] = calc_anomaly(temps, 'temps_enso')
-    return temps[['year', 'month', 'temps_enso', 'temps_no_enso', 'uncertainty']]
 
 def calc_anomaly(temps, name):
     '''
@@ -119,7 +104,7 @@ def calc_anthro_natural_forcings(rf, temps, d1, d2, c1, c2, vd1, vd2, vc1, vc2):
     right_on=['year', 'month'],
     how='outer'
     )
-    data_subset = data.dropna(subset=[['total', 'temps_enso', 'temps_no_enso']])
+    data_subset = data.dropna(subset=['total', 'temps_enso', 'temps_no_enso'])
     smresults = smf.ols('temps_enso ~ nat_warming + anthro_warming', data_subset).fit()
     intercept_anthro = smresults.params.Intercept
     #print(smresults.summary())
@@ -183,8 +168,8 @@ def forcing_run(series, forcing_file, temp_file, enso_file, d1, d2, c1, c2, vd1,
     o = 0
     for n in range(200):
         n_s = str(n + 1).zfill(3)
-        print n_s
-        rf = pd.read_csv('/Users/hausfath/Desktop/Climate Science/Carbon Brief/100% Human/forcings/GWI_piers_forcing_mem'+n_s+'.csv', sep=' ')
+        print(n_s)
+        rf = pd.read_csv('forcings/GWI_piers_forcing_mem'+n_s+'.csv', sep=' ')
         rf.columns = ['date', 'anthro', 'nat', 'total']
         rf['date'] = (rf['date'] - 0.042).round(2)
         rf['year'] = rf['date'].astype(int)
@@ -203,7 +188,7 @@ def forcing_run(series, forcing_file, temp_file, enso_file, d1, d2, c1, c2, vd1,
             o += 1
             res.columns = ['month', 'year', 'anthro_temp_'+str(o), 'nat_temp_'+str(o), 'total_temp_'+str(o)]
             if (n+1) % 20 == 0 and (n+1) != 0 and m == 0:
-                print n_s
+                print(n_s)
                 results = pd.merge(results, res, how='outer', right_on=['month', 'year'], left_on=['month', 'year'])
                 results.to_csv('forcing_analysis_uncertainty_'+str(n+1)+'.csv')
                 results = res[['month', 'year']]
@@ -224,15 +209,34 @@ def sample_normal(mean, stdev, num=10000):
     return s
 
 
-
 #Code to run the various parts manually
-#save_name = 'global'
-#num = 20
-#temps = berkeley_land(land_file)
-#temps = remove_enso(series, temp_file, enso_file)
-#rf = import_forcings(forcing_file)
-#df = calc_anthro_natural_forcings(rf, temps, d1, d2, c1, c2, vd1, vd2, vc1, vc2)
-#vals = calc_other_forcings(df['results'], df['anthro_coef'], df['nat_coef'], d1, d2, c1, c2, vd1, vd2, vc1, vc2, save_name)
-#vals[['temps_enso', 'total_temp', 'volc_temp', 'solar_temp', 'ghg_temp', 'aero_temp']].plot()
+save_name = None
+temps = remove_enso(temp_file, enso_file)
+rf = import_forcings(forcing_file)
+df = calc_anthro_natural_forcings(rf, temps, d1, d2, c1, c2, vd1, vd2, vc1, vc2)
+vals = calc_other_forcings(df['results'], df['anthro_coef'], df['nat_coef'], d1, d2, c1, c2, vd1, vd2, vc1, vc2, save_name)
 
-#forcing_run(series, forcing_file, temp_file, enso_file, d1, d2, c1, c2, vd1, vd2, vc1, vc2, num)
+
+plt.plot(vals['date'], vals['temps_enso'], c='lightgrey')
+plt.plot(vals['date'], vals['total_temp'], c='k')
+plt.plot(vals['date'], vals['ghg_temp'], c='r')
+plt.plot(vals['date'], vals['aero_temp'], c='b')
+plt.plot(vals['date'], vals['nat_temp'], c='g')
+plt.plot([1850, 2022], [0, 0], lw=0.5, c='k')
+
+plt.text(1857, 1.21, 'Observed temperature - Berkeley', c='grey')
+plt.text(1985, 1.5, 'GHGs', c='r')
+plt.text(1945, -0.5, 'Aerosols', c='b')
+plt.text(1998, -0.3, 'Natural', c='g')
+plt.text(1998, 0.3, 'Total', c='k')
+
+
+plt.xlim(1850, 2022)
+plt.xticks([1850, 1900, 1950, 2000, 2020])
+plt.ylim(-0.8, 1.8)
+plt.ylabel('Global mean\nsurface temperature change'+ r'($^{\circ}$C)')
+
+fig = plt.gcf()
+fig.set_size_inches(6, 3)
+fig.savefig('temperature_by_forcer.png', bbox_inches='tight')
+plt.show()
