@@ -20,13 +20,18 @@ vd2 = 209.5 #Slow decay time (years) of thermal response for volcanoes
 vc1 = c1
 vc2 = c2
 
-def import_forcings(forcing_file):
+def import_forcings(forcing_file, aero_scaling=1):
     '''
     Import forcing data into a pandas dataframe
     '''
     rf = pd.read_csv(forcing_file)
     rf['year'] = rf['date'].astype(int)
     rf['month'] = ((rf['date'] - rf['year']) * 12 + 1).round(0).astype(int)
+
+    aero = rf['aero']
+    rf['total'] += (aero_scaling-1)*aero
+    rf['anthro'] += (aero_scaling-1)*aero
+    rf['aero'] = aero_scaling*aero
     return rf
 
 def remove_enso(temp_file, enso_file):
@@ -240,3 +245,41 @@ fig = plt.gcf()
 fig.set_size_inches(6, 3)
 fig.savefig('temperature_by_forcer.png', bbox_inches='tight')
 plt.show()
+
+
+
+
+rf = import_forcings(forcing_file, aero_scaling=1)
+df = calc_anthro_natural_forcings(rf, temps, d1, d2, c1, c2, vd1, vd2, vc1, vc2)
+vals = calc_other_forcings(df['results'], df['anthro_coef'], df['nat_coef'], d1, d2, c1, c2, vd1, vd2, vc1, vc2, save_name)
+
+plt.plot(vals['date'], vals['temps_enso'], c='lightgrey')
+plt.plot(vals['date'], vals['total_temp'], c='k')
+
+rf = import_forcings(forcing_file, aero_scaling=2)
+df = calc_anthro_natural_forcings(rf, temps, d1, d2, c1, c2, vd1, vd2, vc1, vc2)
+vals = calc_other_forcings(df['results'], df['anthro_coef'], df['nat_coef'], d1, d2, c1, c2, vd1, vd2, vc1, vc2, save_name)
+plt.plot(vals['date'], vals['total_temp'], c='r')
+
+rf = import_forcings(forcing_file, aero_scaling=0.2)
+df = calc_anthro_natural_forcings(rf, temps, d1, d2, c1, c2, vd1, vd2, vc1, vc2)
+vals = calc_other_forcings(df['results'], df['anthro_coef'], df['nat_coef'], d1, d2, c1, c2, vd1, vd2, vc1, vc2, save_name)
+plt.plot(vals['date'], vals['total_temp'], c='b')
+
+plt.plot([1850, 2100], [0, 0], lw=0.5, c='k')
+
+plt.text(1857, 1.21, 'Observed temperature - Berkeley', c='grey')
+plt.text(1985, 3.5, 'Strong aerosol cooling', c='red')
+plt.text(2030, 0.5, 'Weak aerosol\ncooling', c='b')
+
+
+plt.xlim(1850, 2100)
+plt.xticks([1850, 1900, 1950, 2000, 2050, 2100])
+plt.ylim(-0.8, 4.5)
+plt.ylabel('Global mean\nsurface temperature change'+ r'($^{\circ}$C)')
+
+fig = plt.gcf()
+fig.set_size_inches(6, 3)
+fig.savefig('aerosol_uncertainty_warming.png', bbox_inches='tight')
+plt.show()
+
